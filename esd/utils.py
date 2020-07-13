@@ -1,5 +1,34 @@
 import matplotlib.pyplot as plt
 
 
-def plot_log(output_dict):
-    pass
+def plot_log(stats_dict, output_file=None, title=None):
+    assert stats_dict is not None
+    fig, ax = plt.subplots()
+    fig.set_size_inches(8, 5)
+
+    marker_list = ['o', '*', 'X', 'P', 'D']
+    line_styles = ['dashed', 'dashdot', 'dotted']  # 'solid'
+    # marker_colors = sns.color_palette('husl', n_colors=len(list(stats_dict.keys())))
+    marker_colors = sns.color_palette('husl', n_colors=1)
+
+    num_example_list = sort(list(stats_dict.keys()))
+    accuracy_list = [stats_dict[num_examples] for num_examples in num_example_list]
+
+    idx = 0
+    line = plt.plot(num_example_list, accuracy_list, linewidth=2., marker=marker_list[idx % len(marker_list)],
+                    color=marker_colors[idx], alpha=0.75, markeredgecolor='k')
+    line[0].set_color(marker_colors[idx])
+    line[0].set_linestyle(line_styles[idx % len(line_styles)])
+
+    plt.xlabel('Number of examples')
+    plt.ylabel('Accuracy')
+    if title is not None:
+        plt.title(title)
+    plt.ylim(0.0, 1.0)
+    plt.legend()
+    plt.tight_layout()
+    if output_file is not None:
+        plt.savefig(output_file, dpi=300)
+    else:
+        plt.show()
+    plt.close('all')

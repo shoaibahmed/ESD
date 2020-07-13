@@ -3,12 +3,13 @@ import torch
 from tqdm import tqdm
 
 
-def train(model, dataloader, device=None):
+def train(model, dataloader, device=None, logging=False):
     optimizer = model.optimizer
     criterion = model.criterion
 
     model.train()
-    for batch_idx, (input, target) in tqdm(enumerate(dataloader)):
+    pbar = tqdm(total=len(dataloader)) if logging else None
+    for input, target in dataloader:
         if device is not None:
             input, target = input.to(device), target.to(device)
         optimizer.zero_grad()
@@ -16,9 +17,11 @@ def train(model, dataloader, device=None):
         loss = criterion(output, target)
         loss.backward()
         optimizer.step()
+        if pbar is not None: pbar.update(1)
+    if pbar is not None: pbar.close
 
 
-def evaluate(model, dataloader, val=True, device=None):
+def evaluate(model, dataloader, device=None, logging=False):
     criterion = model.criterion
 
     model.eval()
@@ -26,7 +29,8 @@ def evaluate(model, dataloader, val=True, device=None):
     correct = 0
     total = 0
     with torch.no_grad():
-        for input, target in tqdm(dataloader):
+        pbar = tqdm(total=len(dataloader)) if logging else None
+        for input, target in dataloader:
             if device is not None:
                 input, target = input.to(device), target.to(device)
             output = model(input)
@@ -34,7 +38,9 @@ def evaluate(model, dataloader, val=True, device=None):
             pred = output.argmax(dim=1)
             correct += int((pred == target).sum())
             total += len(input)
+            if pbar is not None: pbar.update(1)
+        if pbar is not None: pbar.close
     acc = float(correct) / total
     val_loss /= total
-    print(f"[ESD] {'Validation' if val else 'Test'} set: Average loss: {val_loss*args.val_batch_size:.4f}, Accuracy: {correct}/{total} ({100.*acc:.2f}%)")
+    print(f"[ESD] Evaluation | Average loss: {val_loss*dataloader.batch_size:.4f} | Accuracy: {correct}/{total} ({100.*acc:.2f}%)")
     return acc

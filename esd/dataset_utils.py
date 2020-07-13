@@ -1,5 +1,6 @@
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+import numpy as np
+from torch.utils.data import DataLoader, TensorDataset, SubsetRandomSampler
 
 
 class SynteticDataLoader:
@@ -30,7 +31,7 @@ class SynteticDataLoader:
             yield self.input_data, self.input_target
 
 
-def get_syntetic_loader_same(
+def get_syntetic_loader_gpu(
     batch_size,
     data_shape,
     num_classes,
@@ -47,14 +48,10 @@ def get_syntetic_loader_same(
                               memory_format=memory_format, device=device)
 
 
-def get_syntetic_loader(
-    batch_size,
+def get_syntetic_dataset(
     num_examples,
     data_shape,
-    num_classes,
-    start_epoch=0,
-    workers=None,
-    _worker_init_fn=None,
+    num_classes
 ):
     assert isinstance(data_shape, list) or isinstance(data_shape, tuple)
     assert len(data_shape) == 3 and data_shape[0] in [1, 3]
@@ -63,13 +60,26 @@ def get_syntetic_loader(
         torch.randn(num_examples, *data_shape),
         torch.randint(0, num_classes, (num_examples,))
     )
+    return dataset
+
+
+def get_dataloader(
+    dataset,
+    batch_size,
+    num_examples,
+    workers=None,
+):
+    total_examples = len(dataset)
+    assert num_examples <= total_examples
+    indices = np.random.choice(list(range(total_examples)), num_examples)
+    sampler = SubsetRandomSampler(indices)
 
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
         num_workers=workers if workers is not None else 8,
-        shuffle=True,
-        pin_memory=False
+        shuffle=False,
+        pin_memory=False,
+        sampler=sampler
     )
-
     return loader
