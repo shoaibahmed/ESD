@@ -17,4 +17,3 @@ for mname in resnet18 resnet34 resnet50 resnet101 resnet152 vgg11 vgg11_bn vgg13
     python example_imagenet.py --model_name $mname --data_path /ds/images/imagenet/ $extra_args | tee -a results.log
   done
 done
-

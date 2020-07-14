@@ -37,6 +37,10 @@ class EmpiricalShatteringDimension:
         self.dataset = dataset
         if self.dataset is None:
             self.dataset = dataset_utils.get_syntetic_dataset(self.max_examples, self.data_shape, self.num_classes)
+        else:
+            print("Replacing dataset targets with random targets!")
+            assert isinstance(self.dataset.targets, list) or len(self.dataset.targets.shape) == 1
+            self.dataset.targets = torch.randint(0, num_classes, (len(self.dataset.targets),)).numpy().tolist()
 
         # Define the optimizer
         if training_params is None:
