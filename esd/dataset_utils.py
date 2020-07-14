@@ -68,6 +68,7 @@ def get_dataloader(
     batch_size,
     num_examples,
     workers=None,
+    _worker_init_fn=None,
 ):
     total_examples = len(dataset)
     assert num_examples <= total_examples
@@ -78,6 +79,7 @@ def get_dataloader(
         dataset,
         batch_size=batch_size,
         num_workers=workers if workers is not None else 8,
+        worker_init_fn=_worker_init_fn,
         shuffle=False,
         pin_memory=False,
         sampler=sampler

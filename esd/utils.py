@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set()
 
 
 def plot_log(stats_dict, output_file=None, title=None):
@@ -8,11 +10,11 @@ def plot_log(stats_dict, output_file=None, title=None):
 
     marker_list = ['o', '*', 'X', 'P', 'D']
     line_styles = ['dashed', 'dashdot', 'dotted']  # 'solid'
-    # marker_colors = sns.color_palette('husl', n_colors=len(list(stats_dict.keys())))
     marker_colors = sns.color_palette('husl', n_colors=1)
 
-    num_example_list = sort(list(stats_dict.keys()))
+    num_example_list = sorted(list(stats_dict.keys()))
     accuracy_list = [stats_dict[num_examples] for num_examples in num_example_list]
+    assert all([0.0 <= acc <= 1.0 for acc in accuracy_list])
 
     idx = 0
     line = plt.plot(num_example_list, accuracy_list, linewidth=2., marker=marker_list[idx % len(marker_list)],
@@ -24,8 +26,7 @@ def plot_log(stats_dict, output_file=None, title=None):
     plt.ylabel('Accuracy')
     if title is not None:
         plt.title(title)
-    plt.ylim(0.0, 1.0)
-    plt.legend()
+    plt.ylim(0.0, 1.05)
     plt.tight_layout()
     if output_file is not None:
         plt.savefig(output_file, dpi=300)

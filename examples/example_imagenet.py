@@ -1,7 +1,8 @@
+import os
 import argparse
+import simplejson
 
-import torch
-from torchvision import models
+from torchvision import models, transforms, datasets
 
 from esd import EmpiricalShatteringDimension
 from esd.utils import plot_log
@@ -22,6 +23,8 @@ parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--wd', type=float, default=0.0, help='weight decay')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum (only required for SGD)')
 
+parser.add_argument('--plots_dir', type=str, default="Plots/", help='directory to store the complete output plots')
+
 args = parser.parse_args()
 
 assert args.synthetic_data or args.data_path is not None
@@ -32,19 +35,36 @@ model = generator(pretrained=False)
 
 data_shape = (3, 224, 224)
 
+dataset = None
 if not args.synthetic_data:
-    raise NotImplementedError
+    traindir = os.path.join(args.data_path, "train")
+    dataset = datasets.ImageFolder(
+        traindir,
+        transforms.Compose(
+            [transforms.RandomResizedCrop(224), transforms.RandomHorizontalFlip()]
+        ),
+    )
 
 # Optional to specify the training params and optimizer
 training_params = {"optimizer": args.optimizer, "lr": args.lr, "wd": args.wd, "bs": args.batch_size, "train_epochs": args.train_epochs}
 optimizer = None
 
 esd = EmpiricalShatteringDimension(model=model,
-                                   dataset=None,
-                                   synthetic_data=args.synthetic_data,
+                                   dataset=dataset,
                                    data_shape=data_shape,
                                    num_classes=args.num_classes,
                                    optimizer=optimizer,
-                                   training_params=training_params)
+                                   training_params=training_params,
+                                   max_examples=100000,
+                                   example_increment=5000)
 shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8)
-plot_log(log_dict, output_file=None)
+
+if not os.path.exists(args.plots_dir):
+    os.mkdir(args.plots_dir)
+plot_log(log_dict, output_file=os.path.join(args.plots_dir, f"{args.model_name}{'_syn' if args.synthetic_data else ''}.png"))
+
+output_dict = {}
+output_dict["esd"] = shattering_dim
+output_dict["esd_log"] = log_dict
+output_dict["args"] = args.__dict__
+print(simplejson.dumps(output_dict))

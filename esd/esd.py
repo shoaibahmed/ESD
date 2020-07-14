@@ -8,17 +8,21 @@ from . import dataset_utils
 
 
 class EmpiricalShatteringDimension:
-    def __init__(self, model, data_shape, num_classes, dataset=None, synthetic_data=True, optimizer=None,
-                 training_params=None, seed=None, max_examles=10000, example_increment=100, verbose=False):
-        # Assertion tests
-        # assert all([True])
+    def __init__(self, model, data_shape, num_classes, dataset=None, optimizer=None, training_params=None, seed=None,
+                 max_examples=10000, example_increment=100, verbose=False):
 
+        self._worker_init_fn = None
         if seed is not None:
-            print("Using seed = {}".format(args.seed))
-            torch.manual_seed(args.seed + args.local_rank)
-            torch.cuda.manual_seed(args.seed + args.local_rank)
-            np.random.seed(seed=args.seed + args.local_rank)
-            random.seed(args.seed + args.local_rank)
+            print("Using seed = {}".format(seed))
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+            np.random.seed(seed=seed)
+            random.seed(seed)
+
+            def _worker_init_fn(id):
+                np.random.seed(seed=seed + id)
+                random.seed(seed + id)
+            self._worker_init_fn = _worker_init_fn
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
@@ -28,7 +32,7 @@ class EmpiricalShatteringDimension:
         self.verbose = verbose
         self.data_shape = data_shape
         self.num_classes = num_classes
-        self.max_examples = max_examles
+        self.max_examples = max_examples
         self.ex_inc = example_increment
         self.dataset = dataset
         if self.dataset is None:
@@ -45,8 +49,8 @@ class EmpiricalShatteringDimension:
                 optimizer = torch.optim.Adam(self.model.parameters(), lr=training_params["lr"],
                                              weight_decay=training_params["wd"])
             else:
-                optimizer =  torch.optim.SGD(self.model.parameters(), lr=training_params["lr"],
-                                             momentum=training_params["momentum"], weight_decay=training_params["wd"])
+                optimizer = torch.optim.SGD(self.model.parameters(), lr=training_params["lr"],
+                                            momentum=training_params["momentum"], weight_decay=training_params["wd"])
 
         assert optimizer is not None
         self.model.optimizer = optimizer
@@ -59,7 +63,8 @@ class EmpiricalShatteringDimension:
 
             # Reload model state and use random sampler to fix the number of examples in the dataset
             self.model.load_state_dict(self.initial_model_state)
-            dataloader = dataset_utils.get_dataloader(self.dataset, self.training_params["bs"], num_examples)
+            dataloader = dataset_utils.get_dataloader(self.dataset, self.training_params["bs"], num_examples,
+                                                      _worker_init_fn=self._worker_init_fn)
 
             for _ in range(self.train_epochs):
                 training_utils.train(self.model, dataloader, device=self.device, logging=self.verbose)
@@ -67,9 +72,9 @@ class EmpiricalShatteringDimension:
             shattering_dims[num_examples] = acc
 
         shattering_dim = -1
-        num_examples = sort(list(shattering_dims.keys()))
+        num_examples = sorted(list(shattering_dims.keys()))
         for num_example in num_examples:
             acc = shattering_dims[num_example]
-            if acc >= self.acc_thresh:
+            if acc >= acc_thresh:
                 shattering_dim = num_example
         return shattering_dim, shattering_dims

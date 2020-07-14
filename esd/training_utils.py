@@ -42,5 +42,5 @@ def evaluate(model, dataloader, device=None, logging=False):
         if pbar is not None: pbar.close
     acc = float(correct) / total
     val_loss /= total
-    print(f"[ESD] Evaluation | Average loss: {val_loss*dataloader.batch_size:.4f} | Accuracy: {correct}/{total} ({100.*acc:.2f}%)")
+    print(f"[ESD] Evaluation result | Average loss: {val_loss*dataloader.batch_size:.4f} | Accuracy: {correct}/{total} ({100.*acc:.2f}%)")
     return acc
