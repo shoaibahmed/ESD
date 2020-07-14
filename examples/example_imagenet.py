@@ -41,7 +41,7 @@ if not args.synthetic_data:
     dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose(
-            [transforms.RandomResizedCrop(224), transforms.RandomHorizontalFlip()]
+            [transforms.Resize((224, 224)), transforms.ToTensor()]
         ),
     )
 
