@@ -100,7 +100,7 @@ def get_syntetic_dataset(
 
     tensor_shape = (num_examples, *data_shape)
     dataset = TensorDataset(
-        torch.randn(*tensor_shape) if dtype == "float" else torch.randint(0, 256, tensor_shape).to(torch.uint8),
+        torch.randn(*tensor_shape) if dtype == "float" else torch.randint(0, 256, tensor_shape, dtype=torch.uint8),
         torch.randint(0, num_classes, (num_examples,)),
         transform=None if dtype == "float" else ToTensor(),
     )
