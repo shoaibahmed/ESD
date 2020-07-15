@@ -55,6 +55,7 @@ esd = EmpiricalShatteringDimension(model=model,
                                    num_classes=args.num_classes,
                                    optimizer=optimizer,
                                    training_params=training_params,
+                                   synthetic_dtype="uint8",
                                    max_examples=100000,
                                    example_increment=5000)
 shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8)

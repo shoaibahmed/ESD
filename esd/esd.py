@@ -9,7 +9,8 @@ from . import dataset_utils
 
 class EmpiricalShatteringDimension:
     def __init__(self, model, data_shape, num_classes, dataset=None, optimizer=None, training_params=None, seed=None,
-                 max_examples=10000, example_increment=100, verbose=False):
+                 synthetic_dtype="uint8", max_examples=10000, example_increment=100, verbose=False):
+        assert synthetic_dtype in ["uint8", "float"]
 
         self._worker_init_fn = None
         if seed is not None:
@@ -36,9 +37,11 @@ class EmpiricalShatteringDimension:
         self.ex_inc = example_increment
         self.dataset = dataset
         if self.dataset is None:
-            self.dataset = dataset_utils.get_syntetic_dataset(self.max_examples, self.data_shape, self.num_classes)
+            print(f"[ESD] Initializing synthetic dataset with {self.max_examples} {synthetic_dtype} examples and {self.num_classes} number of classes!")
+            self.dataset = dataset_utils.get_syntetic_dataset(self.max_examples, self.data_shape, self.num_classes,
+                                                              dtype=synthetic_dtype)
         else:
-            print("Replacing dataset targets with random targets!")
+            print("[ESD] Replacing dataset targets with random targets!")
             assert isinstance(self.dataset.targets, list) or len(self.dataset.targets.shape) == 1
             self.dataset.targets = torch.randint(0, num_classes, (len(self.dataset.targets),)).numpy().tolist()
 
