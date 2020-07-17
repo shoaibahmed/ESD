@@ -19,7 +19,8 @@ The example also provides distributed example along with usage of synthetic data
 
 ## TODOs
 
-- Test and verify correctness of distributed training -- original dataset training seems to be wrong
+- Test and verify correctness of distributed training
+- Optimization: stop the sweep as soon as the accuracy remains low for three consecutive rounds as the ESD has already been determined
 
 ## License:
 

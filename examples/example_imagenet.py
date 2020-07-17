@@ -2,8 +2,8 @@ import os
 import argparse
 import simplejson
 
-import logging
 import coloredlogs
+import logging
 
 import torch
 from torchvision import models, transforms, datasets
@@ -32,6 +32,7 @@ parser.add_argument('--debug', action='store_true', help='enable debug logging')
 
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--num_gpus", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=8)
 parser.add_argument("--local_rank", type=int, default=0)
 parser.add_argument('--sync_bn', action='store_true')
 
@@ -40,9 +41,8 @@ args = parser.parse_args()
 assert args.synthetic_data or args.data_path is not None
 
 # Setup logging
-# logging.getLogger('matplotlib').setLevel(logging.WARNING)  # Disable logging for matplotlib
 logger = logging.getLogger(__name__)  # Create a logger object
-coloredlogs.install(level='DEBUG' if args.debug else 'INFO', logger=logger)
+coloredlogs.install(level='DEBUG' if args.debug else 'INFO')
 
 # Initialize the distributed environment
 args.distributed = args.num_gpus > 1
@@ -97,9 +97,10 @@ esd = EmpiricalShatteringDimension(model=model,
                                    optimizer=optimizer,
                                    training_params=training_params,
                                    synthetic_dtype="uint8",
-                                   max_examples=1000,
-                                   example_increment=100,
-                                   seed=args.seed)
+                                   max_examples=1000000,
+                                   example_increment=100000,
+                                   seed=args.seed,
+                                   workers=args.num_workers)
 shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8)
 
 if main_proc:

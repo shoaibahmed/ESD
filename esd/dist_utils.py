@@ -10,7 +10,6 @@ def is_main_proc():
 def broadcast_from_main(tensor, is_tensor=True):
     if not torch.distributed.is_initialized():
         return tensor
-    rank = torch.distributed.get_rank()
     
     if is_tensor:
         tensor = tensor.cuda()
@@ -21,7 +20,7 @@ def broadcast_from_main(tensor, is_tensor=True):
         tensor = torch.ByteTensor(storage).cuda()
     
     torch.distributed.broadcast(tensor, src=0)
-    # assert (reduce_tensor(tensor, average=True) - tensor <= 1e-6).all()
+    assert (reduce_tensor(tensor, average=True) - tensor <= 1e-6).all()
     return tensor
 
 
