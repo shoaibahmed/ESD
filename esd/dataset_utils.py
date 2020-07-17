@@ -1,6 +1,8 @@
 import torch
 import numpy as np
-from torch.utils.data import DataLoader, SubsetRandomSampler, Dataset  # TensorDataset
+from torch.utils.data import DataLoader, Dataset  # SubsetRandomSampler, TensorDataset
+
+from . import dist_utils
 
 
 class ToTensor(object):
@@ -43,6 +45,21 @@ class TensorDataset(Dataset):
         return self.targets.size(0)
 
 
+class SubsetDataset(Dataset):
+    def __init__(self, dataset, random_example_idx):
+        assert len(dataset) >= len(random_example_idx)
+        self.dataset = dataset
+        self.random_example_idx = random_example_idx.numpy()
+        # self.random_example_idx = np.random.choice(np.arange(len(dataset)), num_examples)
+
+    def __getitem__(self, index):
+        new_idx = self.random_example_idx[index]
+        return self.dataset[new_idx]
+
+    def __len__(self):
+        return len(self.random_example_idx)
+
+
 class SynteticDataLoader:
     def __init__(
         self,
@@ -75,9 +92,6 @@ def get_syntetic_loader_gpu(
     batch_size,
     data_shape,
     num_classes,
-    start_epoch=0,
-    workers=None,
-    _worker_init_fn=None,
     fp16=False,
     memory_format=torch.contiguous_format,
     device=torch.device("cuda"),
@@ -93,10 +107,17 @@ def get_syntetic_dataset(
     data_shape,
     num_classes,
     dtype="float",
+    world_size=1,
 ):
     assert isinstance(data_shape, list) or isinstance(data_shape, tuple)
     assert len(data_shape) == 3 and data_shape[0] in [1, 3]
     assert dtype in ["uint8", "float"]
+    assert world_size >= 1
+    assert world_size == 1 or torch.distributed.is_initialized()
+
+    # Number of examples for this dataset
+    assert num_examples % world_size == 0
+    num_examples = num_examples // world_size
 
     tensor_shape = (num_examples, *data_shape)
     dataset = TensorDataset(
@@ -113,19 +134,25 @@ def get_dataloader(
     num_examples,
     workers=None,
     _worker_init_fn=None,
+
 ):
     total_examples = len(dataset)
     assert num_examples <= total_examples
-    indices = np.random.choice(list(range(total_examples)), num_examples)
-    sampler = SubsetRandomSampler(indices)
+    
+    # indices = np.random.choice(list(range(total_examples)), num_examples)
+    # sampler = SubsetRandomSampler(indices)
+    random_example_idx = torch.from_numpy(np.random.choice(np.arange(len(dataset)), num_examples))
+    dist_utils.broadcast_from_main(random_example_idx)  # Send to all other processes
+    dataset_small = SubsetDataset(dataset, random_example_idx)  # Sample only num_examples from the dataset
+    dist_sampler = torch.utils.data.distributed.DistributedSampler(dataset_small) if torch.distributed.is_initialized() else None
 
     loader = DataLoader(
-        dataset,
+        dataset_small,
         batch_size=batch_size,
         num_workers=workers if workers is not None else 8,
         worker_init_fn=_worker_init_fn,
         shuffle=False,
         pin_memory=False,
-        sampler=sampler
+        sampler=dist_sampler
     )
     return loader

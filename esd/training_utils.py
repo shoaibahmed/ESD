@@ -1,6 +1,7 @@
-#!/bin/python
 import torch
 from tqdm import tqdm
+
+from . import dist_utils
 
 
 def train(model, dataloader, device=None, logging=False):
@@ -40,6 +41,12 @@ def evaluate(model, dataloader, device=None, logging=False):
             total += len(input)
             if pbar is not None: pbar.update(1)
         if pbar is not None: pbar.close
+    
+    # Collect statistics from different processes in case of a distributed job
+    correct = int(dist_utils.reduce_tensor(torch.tensor(correct).cuda()))
+    total = int(dist_utils.reduce_tensor(torch.tensor(total).cuda()))
+    val_loss = float(dist_utils.reduce_tensor(torch.tensor(val_loss).cuda()))
+
     acc = float(correct) / total
     val_loss /= total
     print(f"[ESD] Evaluation result | Average loss: {val_loss*dataloader.batch_size:.4f} | Accuracy: {correct}/{total} ({100.*acc:.2f}%)")
