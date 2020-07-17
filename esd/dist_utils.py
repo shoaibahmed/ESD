@@ -2,6 +2,11 @@ import torch
 import pickle
 
 
+def is_main_proc():
+    main_proc = not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0
+    return main_proc
+
+
 def broadcast_from_main(tensor, is_tensor=True):
     if not torch.distributed.is_initialized():
         return tensor

@@ -3,6 +3,7 @@ import numpy as np
 from torch.utils.data import DataLoader, Dataset  # SubsetRandomSampler, TensorDataset
 
 from . import dist_utils
+from . import logging_utils
 
 
 class ToTensor(object):
@@ -121,6 +122,7 @@ def get_syntetic_dataset(
     # Number of examples are uniformly distributed for each process (doesn't require distributed sampler)
     assert num_examples % world_size == 0
     num_examples = num_examples // world_size
+    logging_utils.log_debug(f"Creating synthetic dataset of size {num_examples} for each process ({world_size})!")
 
     tensor_shape = (num_examples, *data_shape)
     dataset = TensorDataset(
@@ -139,15 +141,18 @@ def get_dataloader(
     _worker_init_fn=None,
     world_size=1,
 ):
-    # Number of examples to be used should be uniformly distributed across processes
-    assert num_examples % world_size == 0
-    num_examples = num_examples // world_size
     assert num_examples <= len(dataset)
+
+    synthetic_dataset = isinstance(dataset, TensorDataset)
+    if synthetic_dataset:
+        # Number of examples to be used should be uniformly distributed across processes as there is no distributed sampler
+        assert num_examples % world_size == 0
+        num_examples = num_examples // world_size
     
     dataset_small = SubsetDataset(dataset, num_examples)  # Sample only num_examples from the dataset
     dist_sampler = None
     if torch.distributed.is_initialized() and not isinstance(dataset, TensorDataset):  # Tensor dataset has already splitted the examples over processes
-        # print("[ESD] Using distributed sampler for external dataset!")
+        logging_utils.log_debug("Using distributed sampler for external dataset!")
         dist_sampler = torch.utils.data.distributed.DistributedSampler(dataset_small)
 
     loader = DataLoader(

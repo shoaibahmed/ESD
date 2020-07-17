@@ -6,6 +6,7 @@ import torch
 from . import training_utils
 from . import dataset_utils
 from . import dist_utils
+from . import logging_utils
 
 
 class EmpiricalShatteringDimension:
@@ -19,7 +20,7 @@ class EmpiricalShatteringDimension:
             self.world_size = torch.distributed.get_world_size()
             self.num_gpus = torch.cuda.device_count()
             self.rank = torch.distributed.get_rank()
-            print(f"[ESD] Distributed environment detected with a world-size of {self.num_gpus} and {self.num_gpus} GPUs per node!")
+            logging_utils.log_info(f"Distributed environment detected with a world-size of {self.num_gpus} and {self.num_gpus} GPUs per node!")
 
         self._worker_init_fn = None
         if seed is not None:
@@ -48,11 +49,11 @@ class EmpiricalShatteringDimension:
         self.dataset = dataset
 
         if self.dataset is None:
-            print(f"[ESD] Initializing synthetic dataset with {self.max_examples} {synthetic_dtype} examples and {self.num_classes} number of classes!")
+            logging_utils.log_info(f"Initializing synthetic dataset with {self.max_examples} {synthetic_dtype} examples and {self.num_classes} number of classes!")
             self.dataset = dataset_utils.get_syntetic_dataset(self.max_examples, self.data_shape, self.num_classes,
                                                               dtype=synthetic_dtype, world_size=self.world_size)
         else:
-            print("[ESD] Replacing dataset targets with random targets!")
+            logging_utils.log_info("Replacing dataset targets with random targets!")
             assert isinstance(self.dataset.targets, list) or len(self.dataset.targets.shape) == 1
             
             # Ensure same targets are generated at each process
@@ -85,16 +86,18 @@ class EmpiricalShatteringDimension:
     def evaluate(self, acc_thresh=0.8):
         shattering_dims = {}
         for num_examples in range(self.ex_inc, self.max_examples + self.ex_inc, self.ex_inc):
-            print(f"[ESD] Training model using {num_examples} examples...")
+            logging_utils.log_info(f"Training model using {num_examples} examples...")
 
             # Reload model state and use random sampler to fix the number of examples in the dataset
             self.model.load_state_dict(self.initial_model_state)
             dataloader = dataset_utils.get_dataloader(self.dataset, self.training_params["bs"], num_examples,
                                                       _worker_init_fn=self._worker_init_fn, world_size=self.world_size)
 
-            for _ in range(self.train_epochs):
+            for epoch in range(self.train_epochs):
+                logging_utils.log_debug(f"Starting training for epoch # {epoch + 1}...")
                 training_utils.train(self.model, dataloader, device=self.device, logging=self.verbose)
-            acc = training_utils.evaluate(self.model, dataloader, device=self.device, logging=self.verbose)
+            acc, log_dict = training_utils.evaluate(self.model, dataloader, device=self.device, logging=self.verbose)
+            assert log_dict['total'] == num_examples, f"{log_dict['total']} != {num_examples}"
             shattering_dims[num_examples] = acc
 
         shattering_dim = -1

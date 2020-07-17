@@ -2,6 +2,9 @@ import os
 import argparse
 import simplejson
 
+import logging
+import coloredlogs
+
 import torch
 from torchvision import models, transforms, datasets
 
@@ -25,6 +28,7 @@ parser.add_argument('--wd', type=float, default=0.0, help='weight decay')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum (only required for SGD)')
 
 parser.add_argument('--plots_dir', type=str, default="Plots/", help='directory to store the complete output plots')
+parser.add_argument('--debug', action='store_true', help='enable debug logging')
 
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--num_gpus", type=int, default=1)
@@ -34,6 +38,11 @@ parser.add_argument('--sync_bn', action='store_true')
 args = parser.parse_args()
 
 assert args.synthetic_data or args.data_path is not None
+
+# Setup logging
+# logging.getLogger('matplotlib').setLevel(logging.WARNING)  # Disable logging for matplotlib
+logger = logging.getLogger(__name__)  # Create a logger object
+coloredlogs.install(level='DEBUG' if args.debug else 'INFO', logger=logger)
 
 # Initialize the distributed environment
 args.distributed = args.num_gpus > 1

@@ -19,8 +19,7 @@ The example also provides distributed example along with usage of synthetic data
 
 ## TODOs
 
-- Testing distributed support
-- Using colored logs for logging
+- Test and verify correctness of distributed training -- original dataset training seems to be wrong
 
 ## License:
 

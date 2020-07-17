@@ -2,6 +2,7 @@ import torch
 from tqdm import tqdm
 
 from . import dist_utils
+from . import logging_utils
 
 
 def train(model, dataloader, device=None, logging=False):
@@ -49,5 +50,6 @@ def evaluate(model, dataloader, device=None, logging=False):
 
     acc = float(correct) / total
     val_loss /= total
-    print(f"[ESD] Evaluation result | Average loss: {val_loss*dataloader.batch_size:.4f} | Accuracy: {correct}/{total} ({100.*acc:.2f}%)")
-    return acc
+    log_dict = dict(correct=correct, total=total, val_loss=val_loss)
+    logging_utils.log_info(f"Evaluation result | Average loss: {val_loss*dataloader.batch_size:.4f} | Accuracy: {correct}/{total} ({100.*acc:.2f}%)")
+    return acc, log_dict
