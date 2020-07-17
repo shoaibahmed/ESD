@@ -15,9 +15,8 @@ def broadcast_from_main(tensor, is_tensor=True):
         storage = torch.ByteStorage.from_buffer(buffer)
         tensor = torch.ByteTensor(storage).cuda()
     
-    if rank == 0:
-        torch.distributed.broadcast(tensor, src=0)
-        # assert (reduce_tensor(tensor, average=True) - tensor <= 1e-6).all()
+    torch.distributed.broadcast(tensor, src=0)
+    # assert (reduce_tensor(tensor, average=True) - tensor <= 1e-6).all()
     return tensor
 
 

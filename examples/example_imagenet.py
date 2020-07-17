@@ -68,6 +68,7 @@ if args.distributed:
 data_shape = (3, 224, 224)
 dataset = None
 if not args.synthetic_data:
+    print("Loading dataset...")
     traindir = os.path.join(args.data_path, "train")
     dataset = datasets.ImageFolder(
         traindir,
@@ -87,7 +88,7 @@ esd = EmpiricalShatteringDimension(model=model,
                                    optimizer=optimizer,
                                    training_params=training_params,
                                    synthetic_dtype="uint8",
-                                   max_examples=10000,
+                                   max_examples=1000,
                                    example_increment=100,
                                    seed=args.seed)
 shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8)

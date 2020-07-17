@@ -46,18 +46,21 @@ class TensorDataset(Dataset):
 
 
 class SubsetDataset(Dataset):
-    def __init__(self, dataset, random_example_idx):
-        assert len(dataset) >= len(random_example_idx)
+    def __init__(self, dataset, num_examples):
+        assert len(dataset) >= num_examples
         self.dataset = dataset
+        self.num_examples = num_examples
+        
+        random_example_idx = torch.from_numpy(np.random.choice(np.arange(len(dataset)), num_examples))
+        dist_utils.broadcast_from_main(random_example_idx)  # Send to all other processes
         self.random_example_idx = random_example_idx.numpy()
-        # self.random_example_idx = np.random.choice(np.arange(len(dataset)), num_examples)
 
     def __getitem__(self, index):
         new_idx = self.random_example_idx[index]
         return self.dataset[new_idx]
 
     def __len__(self):
-        return len(self.random_example_idx)
+        return self.num_examples
 
 
 class SynteticDataLoader:
@@ -115,7 +118,7 @@ def get_syntetic_dataset(
     assert world_size >= 1
     assert world_size == 1 or torch.distributed.is_initialized()
 
-    # Number of examples for this dataset
+    # Number of examples are uniformly distributed for each process (doesn't require distributed sampler)
     assert num_examples % world_size == 0
     num_examples = num_examples // world_size
 
@@ -134,17 +137,18 @@ def get_dataloader(
     num_examples,
     workers=None,
     _worker_init_fn=None,
-
+    world_size=1,
 ):
-    total_examples = len(dataset)
-    assert num_examples <= total_examples
+    # Number of examples to be used should be uniformly distributed across processes
+    assert num_examples % world_size == 0
+    num_examples = num_examples // world_size
+    assert num_examples <= len(dataset)
     
-    # indices = np.random.choice(list(range(total_examples)), num_examples)
-    # sampler = SubsetRandomSampler(indices)
-    random_example_idx = torch.from_numpy(np.random.choice(np.arange(len(dataset)), num_examples))
-    dist_utils.broadcast_from_main(random_example_idx)  # Send to all other processes
-    dataset_small = SubsetDataset(dataset, random_example_idx)  # Sample only num_examples from the dataset
-    dist_sampler = torch.utils.data.distributed.DistributedSampler(dataset_small) if torch.distributed.is_initialized() else None
+    dataset_small = SubsetDataset(dataset, num_examples)  # Sample only num_examples from the dataset
+    dist_sampler = None
+    if torch.distributed.is_initialized() and not isinstance(dataset, TensorDataset):  # Tensor dataset has already splitted the examples over processes
+        # print("[ESD] Using distributed sampler for external dataset!")
+        dist_sampler = torch.utils.data.distributed.DistributedSampler(dataset_small)
 
     loader = DataLoader(
         dataset_small,

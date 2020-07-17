@@ -2,7 +2,6 @@ import copy
 import random
 import numpy as np
 import torch
-from torch import device
 
 from . import training_utils
 from . import dataset_utils
@@ -38,7 +37,7 @@ class EmpiricalShatteringDimension:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.initial_model_state = copy.deepcopy(model.state_dict())
-        dist_utils.broadcast_from_main(self.initial_model_state, is_tensor=False)
+        # dist_utils.broadcast_from_main(self.initial_model_state, is_tensor=False)  # DDP will take care of this
 
         self.seed = seed
         self.verbose = verbose
@@ -60,7 +59,7 @@ class EmpiricalShatteringDimension:
             if not self.distributed:
                 self.dataset.targets = np.randint(0, num_classes, (len(self.dataset.targets),)).tolist()
             else:
-                assert device.type == "cuda"
+                assert self.device.type == "cuda"
                 targets = torch.randint(0, num_classes, (len(self.dataset.targets),))
                 dist_utils.broadcast_from_main(targets)
                 self.dataset.targets = targets.numpy().tolist()
@@ -89,13 +88,11 @@ class EmpiricalShatteringDimension:
             print(f"[ESD] Training model using {num_examples} examples...")
 
             # Reload model state and use random sampler to fix the number of examples in the dataset
-            print("[ESD] restoring model")
             self.model.load_state_dict(self.initial_model_state)
             dataloader = dataset_utils.get_dataloader(self.dataset, self.training_params["bs"], num_examples,
-                                                      _worker_init_fn=self._worker_init_fn)
+                                                      _worker_init_fn=self._worker_init_fn, world_size=self.world_size)
 
             for _ in range(self.train_epochs):
-                print("[ESD] starting new epoch")
                 training_utils.train(self.model, dataloader, device=self.device, logging=self.verbose)
             acc = training_utils.evaluate(self.model, dataloader, device=self.device, logging=self.verbose)
             shattering_dims[num_examples] = acc
