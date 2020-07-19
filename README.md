@@ -1,6 +1,7 @@
 # ESD
 
 A simple PyTorch library for computing empirical shattering dimension of a given network. 
+
 The library naturally supports distributed models which includes both DataParallel and DistributedDataParallel. The user just has to initialize the environment and pass in the distributed model to the library.
 The library also supports using synthetic data instead of actual data samples. In case an actual dataset is provided, the library just replaces the targets with randomly generated targets.
 
@@ -20,7 +21,6 @@ The example also provides distributed example along with usage of synthetic data
 ## TODOs
 
 - Test and verify correctness of distributed training
-- Optimization: stop the sweep as soon as the accuracy remains low for three consecutive rounds as the ESD has already been determined
 
 ## License:
 

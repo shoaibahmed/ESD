@@ -7,11 +7,11 @@ then
   echo "Starting "$num_procs"x distributed job!"
 fi
 
-# NV_GPU=2,3 sudo userdocker run -it -v /netscratch:/netscratch -v /ds:/ds dlcc/pytorch:19.09 /netscratch/siddiqui/Repositories/ESD/examples/sweep.sh 2
+# NV_GPU=3,4 sudo userdocker run -it -v /netscratch:/netscratch -v /ds:/ds dlcc/pytorch:19.09 /netscratch/siddiqui/Repositories/ESD/examples/sweep.sh 2
 export PATH="/home/siddiqui/anaconda3/bin/":$PATH
 cd /netscratch/siddiqui/Repositories/ESD/examples/
-rm results_dist.log
-touch results_dist.log
+rm "results_dist_"$num_procs".log"
+touch "results_dist_"$num_procs".log"
 
 optim_bs=256
 bs=$(($optim_bs/$num_procs))
@@ -25,6 +25,8 @@ for mname in resnet18 resnet34 resnet50; do
     fi
     echo "Evaluating $mname model!"
     python multiproc.py --nproc_per_node $num_procs example_imagenet.py --model_name $mname --sync_bn \
-           --data_path /ds/images/imagenet/ --batch_size $bs --lr 1e-3 --num_workers 4 $extra_args | tee -a results_dist.log
+           --data_path /ds/images/imagenet/ --batch_size $bs --optimizer adam --lr 1e-3 --num_workers 5 \
+           --use_gpu_dl --debug $extra_args | tee -a "results_dist_"$num_procs".log"
+    sleep 5  # To ensure that the port has bas been released for the subsequent process
   done
 done

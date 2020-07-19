@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from torch.utils.data import DataLoader, Dataset  # SubsetRandomSampler, TensorDataset
+from torch.utils.data import Dataset  # SubsetRandomSampler, TensorDataset
 
 from . import dist_utils
 from . import logging_utils
@@ -65,34 +65,7 @@ class SubsetDataset(Dataset):
         return self.num_examples
 
 
-class SynteticDataLoader:
-    def __init__(self, fp16, batch_size, num_classes, num_channels, height, width, 
-                 memory_format=torch.contiguous_format, device=torch.device("cuda")):
-        input_data = (
-            torch.empty(batch_size, num_channels, height, width).contiguous(memory_format=memory_format).to(device).uniform_(0, 1.0)
-        )
-        input_target = torch.randint(0, num_classes, (batch_size,)).to(device)
-        if fp16:
-            assert device.type == 'cuda'
-            input_data = input_data.half()
-
-        self.input_data = input_data
-        self.input_target = input_target
-
-    def __iter__(self):
-        while True:
-            yield self.input_data, self.input_target
-
-
-def get_syntetic_loader_gpu(batch_size, data_shape, num_classes, fp16=False,
-                            memory_format=torch.contiguous_format, device=torch.device("cuda")):
-    assert isinstance(data_shape, list) or isinstance(data_shape, tuple)
-    assert len(data_shape) == 3 and data_shape[0] in [1, 3]
-    return SynteticDataLoader(fp16, batch_size, num_classes, data_shape[0], data_shape[1], data_shape[2],
-                              memory_format=memory_format, device=device)
-
-
-def get_syntetic_dataset(num_examples, data_shape, num_classes, dtype="float", world_size=1):
+def get_syntetic_dataset(num_examples, data_shape, num_classes, dtype="float", world_size=1, gpu_dl=False):
     assert isinstance(data_shape, list) or isinstance(data_shape, tuple)
     assert len(data_shape) == 3 and data_shape[0] in [1, 3]
     assert dtype in ["uint8", "float"]
@@ -108,7 +81,7 @@ def get_syntetic_dataset(num_examples, data_shape, num_classes, dtype="float", w
     dataset = TensorDataset(
         torch.randn(*tensor_shape) if dtype == "float" else torch.randint(0, 256, tensor_shape, dtype=torch.uint8),
         torch.randint(0, num_classes, (num_examples,)),
-        transform=None if dtype == "float" else ToTensor(),
+        transform=None if dtype == "float" or gpu_dl else ToTensor(),
     )
     return dataset
 
@@ -117,30 +90,3 @@ def replace_dataset_targets(dataset, num_classes):
     targets = torch.randint(0, num_classes, (len(dataset.targets),))
     dist_utils.broadcast_from_main(targets)
     dataset.targets = targets.numpy().tolist()
-
-
-def get_dataloader(dataset, batch_size, num_examples, workers=None, _worker_init_fn=None, world_size=1):
-    assert num_examples <= len(dataset)
-
-    synthetic_dataset = isinstance(dataset, TensorDataset)
-    if synthetic_dataset:
-        # Number of examples to be used should be uniformly distributed across processes as there is no distributed sampler
-        assert num_examples % world_size == 0
-        num_examples = num_examples // world_size
-    
-    dataset_small = SubsetDataset(dataset, num_examples)  # Sample only num_examples from the dataset
-    dist_sampler = None
-    if torch.distributed.is_initialized() and not isinstance(dataset, TensorDataset):  # Tensor dataset has already splitted the examples over processes
-        logging_utils.log_debug("Using distributed sampler for external dataset!")
-        dist_sampler = torch.utils.data.distributed.DistributedSampler(dataset_small)
-
-    loader = DataLoader(
-        dataset_small,
-        batch_size=batch_size,
-        num_workers=workers if workers is not None else 8,
-        worker_init_fn=_worker_init_fn,
-        shuffle=False,
-        pin_memory=False,
-        sampler=dist_sampler
-    )
-    return loader

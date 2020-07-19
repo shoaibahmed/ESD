@@ -4,6 +4,7 @@ import simplejson
 
 import coloredlogs
 import logging
+import warnings
 
 import torch
 from torchvision import models, transforms, datasets
@@ -35,6 +36,7 @@ parser.add_argument("--num_gpus", type=int, default=1)
 parser.add_argument("--num_workers", type=int, default=8)
 parser.add_argument("--local_rank", type=int, default=0)
 parser.add_argument('--sync_bn', action='store_true')
+parser.add_argument('--use_gpu_dl', action='store_true', help='use GPU dataloader which might be more efficient in practice')
 
 args = parser.parse_args()
 
@@ -43,6 +45,7 @@ assert args.synthetic_data or args.data_path is not None
 # Setup logging
 logger = logging.getLogger(__name__)  # Create a logger object
 coloredlogs.install(level='DEBUG' if args.debug else 'INFO')
+warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
 
 # Initialize the distributed environment
 args.distributed = args.num_gpus > 1
@@ -82,7 +85,7 @@ if not args.synthetic_data:
     dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose(
-            [transforms.Resize((224, 224)), transforms.ToTensor()]
+            [transforms.Resize((224, 224))] + ([] if args.use_gpu_dl else [transforms.ToTensor()])
         ),
     )
 
@@ -100,8 +103,9 @@ esd = EmpiricalShatteringDimension(model=model,
                                    max_examples=1000000,
                                    example_increment=100000,
                                    seed=args.seed,
-                                   workers=args.num_workers)
-shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8)
+                                   workers=args.num_workers,
+                                   gpu_dl=args.use_gpu_dl)
+shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8, termination_thresh=0.1)
 
 if main_proc:
     if not os.path.exists(args.plots_dir):
