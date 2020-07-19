@@ -2,6 +2,11 @@ import os
 import argparse
 import simplejson
 
+import coloredlogs
+import logging
+import warnings
+
+import torch
 from torchvision import models, transforms, datasets
 
 from esd import EmpiricalShatteringDimension
@@ -24,24 +29,63 @@ parser.add_argument('--wd', type=float, default=0.0, help='weight decay')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum (only required for SGD)')
 
 parser.add_argument('--plots_dir', type=str, default="Plots/", help='directory to store the complete output plots')
+parser.add_argument('--debug', action='store_true', help='enable debug logging')
+
+parser.add_argument("--seed", type=int, default=None)
+parser.add_argument("--num_gpus", type=int, default=1)
+parser.add_argument("--num_workers", type=int, default=8)
+parser.add_argument("--local_rank", type=int, default=0)
+parser.add_argument('--sync_bn', action='store_true')
+parser.add_argument('--use_gpu_dl', action='store_true', help='use GPU dataloader which might be more efficient in practice')
 
 args = parser.parse_args()
 
 assert args.synthetic_data or args.data_path is not None
 
+# Setup logging
+logger = logging.getLogger(__name__)  # Create a logger object
+coloredlogs.install(level='DEBUG' if args.debug else 'INFO')
+warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
+
+# Initialize the distributed environment
+args.distributed = args.num_gpus > 1
+if 'WORLD_SIZE' in os.environ:
+    args.distributed = int(os.environ['WORLD_SIZE']) > 1
+
+args.gpu = args.local_rank
+args.world_size = 1
+if args.distributed:
+    assert args.local_rank >= 0
+    torch.cuda.set_device(args.gpu)
+    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    args.world_size = torch.distributed.get_world_size()
+    args.num_gpus = torch.cuda.device_count()
+    print(f"Initializing distributed environment with {args.num_gpus} GPUs...")
+args.optimizer_batch_size = args.batch_size * args.world_size
+
+main_proc = not torch.distributed.is_initialized() or args.local_rank == 0  # One main proc per node
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # Create the model
 generator = getattr(models, args.model_name)
-model = generator(pretrained=False)
+model = generator(pretrained=False).to(device)
+
+# Wrap the model in the distributed wrapper
+if args.distributed:
+    if args.sync_bn:
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
+                                                      output_device=args.local_rank, find_unused_parameters=True)
 
 data_shape = (3, 224, 224)
-
 dataset = None
 if not args.synthetic_data:
+    print("Loading dataset...")
     traindir = os.path.join(args.data_path, "train")
     dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose(
-            [transforms.Resize((224, 224)), transforms.ToTensor()]
+            [transforms.Resize((224, 224))] + ([] if args.use_gpu_dl else [transforms.ToTensor()])
         ),
     )
 
@@ -56,16 +100,20 @@ esd = EmpiricalShatteringDimension(model=model,
                                    optimizer=optimizer,
                                    training_params=training_params,
                                    synthetic_dtype="uint8",
-                                   max_examples=100000,
-                                   example_increment=5000)
-shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8)
+                                   max_examples=1000000,
+                                   example_increment=100000,
+                                   seed=args.seed,
+                                   workers=args.num_workers,
+                                   gpu_dl=args.use_gpu_dl)
+shattering_dim, log_dict = esd.evaluate(acc_thresh=0.8, termination_thresh=0.1)
 
-if not os.path.exists(args.plots_dir):
-    os.mkdir(args.plots_dir)
-plot_log(log_dict, output_file=os.path.join(args.plots_dir, f"{args.model_name}{'_syn' if args.synthetic_data else ''}.png"))
+if main_proc:
+    if not os.path.exists(args.plots_dir):
+        os.mkdir(args.plots_dir)
+    plot_log(log_dict, output_file=os.path.join(args.plots_dir, f"{args.model_name}{'_syn' if args.synthetic_data else ''}.png"))
 
-output_dict = {}
-output_dict["esd"] = shattering_dim
-output_dict["esd_log"] = log_dict
-output_dict["args"] = args.__dict__
-print(simplejson.dumps(output_dict))
+    output_dict = {}
+    output_dict["esd"] = shattering_dim
+    output_dict["esd_log"] = log_dict
+    output_dict["args"] = args.__dict__
+    print(simplejson.dumps(output_dict))

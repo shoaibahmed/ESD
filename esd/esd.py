@@ -1,16 +1,27 @@
 import copy
+import time
 import random
 import numpy as np
 import torch
 
+from . import logging_utils
 from . import training_utils
 from . import dataset_utils
+from . import dataloader_utils
 
 
 class EmpiricalShatteringDimension:
     def __init__(self, model, data_shape, num_classes, dataset=None, optimizer=None, training_params=None, seed=None,
-                 synthetic_dtype="uint8", max_examples=10000, example_increment=100, verbose=False):
+                 synthetic_dtype="uint8", max_examples=10000, example_increment=100, workers=8, gpu_dl=False, verbose=False):
         assert synthetic_dtype in ["uint8", "float"]
+
+        self.distributed, self.world_size, self.num_gpus, self.rank = False, 1, 1, 0
+        if torch.distributed.is_initialized():
+            self.distributed = True
+            self.world_size = torch.distributed.get_world_size()
+            self.num_gpus = torch.cuda.device_count()
+            self.rank = torch.distributed.get_rank()
+            logging_utils.log_info(f"Distributed environment detected with a world-size of {self.num_gpus} and {self.num_gpus} GPUs per node!")
 
         self._worker_init_fn = None
         if seed is not None:
@@ -28,26 +39,31 @@ class EmpiricalShatteringDimension:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.initial_model_state = copy.deepcopy(model.state_dict())
+        # dist_utils.broadcast_from_main(self.initial_model_state, is_tensor=False)  # DDP will take care of this
 
         self.seed = seed
+        self.workers = workers
+        self.gpu_dl = gpu_dl
         self.verbose = verbose
         self.data_shape = data_shape
         self.num_classes = num_classes
         self.max_examples = max_examples
         self.ex_inc = example_increment
         self.dataset = dataset
+
         if self.dataset is None:
-            print(f"[ESD] Initializing synthetic dataset with {self.max_examples} {synthetic_dtype} examples and {self.num_classes} number of classes!")
+            logging_utils.log_info(f"Initializing synthetic dataset with {self.max_examples} {synthetic_dtype} examples and {self.num_classes} number of classes!")
             self.dataset = dataset_utils.get_syntetic_dataset(self.max_examples, self.data_shape, self.num_classes,
-                                                              dtype=synthetic_dtype)
+                                                              dtype=synthetic_dtype, world_size=self.world_size, gpu_dl=self.gpu_dl)
         else:
-            print("[ESD] Replacing dataset targets with random targets!")
+            # Ensure same targets are generated at each process
+            logging_utils.log_info("Replacing dataset targets with random targets!")
             assert isinstance(self.dataset.targets, list) or len(self.dataset.targets.shape) == 1
-            self.dataset.targets = torch.randint(0, num_classes, (len(self.dataset.targets),)).numpy().tolist()
+            dataset_utils.replace_dataset_targets(self.dataset, num_classes)
 
         # Define the optimizer
         if training_params is None:
-            training_params = dict(optimizer="adam", lr=1e-3, train_epochs=10, wd=0.0)  # Use standard params
+            training_params = dict(optimizer="adam", lr=1e-3, train_epochs=50, wd=0.0)  # Use standard params
         else:
             self.training_params = training_params
         self.train_epochs = training_params["train_epochs"]
@@ -63,20 +79,27 @@ class EmpiricalShatteringDimension:
         self.model.optimizer = optimizer
         self.model.criterion = torch.nn.CrossEntropyLoss()
 
-    def evaluate(self, acc_thresh=0.8):
+    def evaluate(self, acc_thresh=0.8, termination_thresh=0.1):
         shattering_dims = {}
         for num_examples in range(self.ex_inc, self.max_examples + self.ex_inc, self.ex_inc):
-            print(f"[ESD] Training model using {num_examples} examples...")
+            logging_utils.log_info(f"Training model using {num_examples} examples...")
 
             # Reload model state and use random sampler to fix the number of examples in the dataset
             self.model.load_state_dict(self.initial_model_state)
-            dataloader = dataset_utils.get_dataloader(self.dataset, self.training_params["bs"], num_examples,
-                                                      _worker_init_fn=self._worker_init_fn)
+            dataloader = dataloader_utils.get_dataloader(self.dataset, self.training_params["bs"], num_examples, workers=self.workers,
+                                                         _worker_init_fn=self._worker_init_fn, world_size=self.world_size, gpu_dl=self.gpu_dl)
 
-            for _ in range(self.train_epochs):
+            for epoch in range(self.train_epochs):
+                start = time.time()
+                logging_utils.log_debug(f"Starting training for epoch # {epoch + 1}...")
                 training_utils.train(self.model, dataloader, device=self.device, logging=self.verbose)
-            acc = training_utils.evaluate(self.model, dataloader, device=self.device, logging=self.verbose)
+                logging_utils.log_debug(f"Training for {epoch + 1} finished. Time elapsed: {(time.time()-start)/60.} mins.")
+            acc, log_dict = training_utils.evaluate(self.model, dataloader, device=self.device, logging=self.verbose)
+            assert log_dict['total'] == num_examples, f"{log_dict['total']} != {num_examples}"
             shattering_dims[num_examples] = acc
+            if acc < termination_thresh:
+                logging_utils.log_info(f"Terminating ESD search after encountering an accuracy less than the termination thresh ({acc} < {termination_thresh}) at {num_examples} examples!")
+                break
 
         shattering_dim = -1
         num_examples = sorted(list(shattering_dims.keys()))
