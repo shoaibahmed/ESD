@@ -104,7 +104,7 @@ class EmpiricalShatteringDimension:
 
             for epoch in range(self.train_epochs):
                 start = time.time()
-                logging_utils.log_debug(f"Starting training for epoch # {epoch + 1} with an LR of {last_lr}!")
+                logging_utils.log_debug(f"Starting training for epoch # {epoch + 1} with an LR of {last_lr:.6f}!")
                 training_utils.train(self.model, dataloader, device=self.device, logging=self.verbose)
                 if lr_scheduler is not None:
                     lr_scheduler.step()

@@ -11,20 +11,6 @@ from .dataset_utils import TensorDataset, SubsetDataset
 class PrefetchedWrapper(object):
     def prefetched_loader(loader, fp16=False, normalization=False):
         if normalization:
-            mean = (
-                torch.tensor([0.485, 0.456, 0.406])
-                .cuda()
-                .view(1, 3, 1, 1)
-            ) * 255
-            std = (
-                torch.tensor([0.229, 0.224, 0.225])
-                .cuda()
-                .view(1, 3, 1, 1)
-            ) * 255
-            if fp16:
-                mean = mean.half()
-                std = std.half()
-        else:
             raw_normalizer = torch.tensor([255.0]).cuda().view(1, 1, 1, 1)
             if fp16:
                 raw_normalizer = raw_normalizer.half()
@@ -39,8 +25,6 @@ class PrefetchedWrapper(object):
                 next_input = next_input.float()
 
                 if normalization:
-                    next_input = next_input.sub_(mean).div_(std)
-                else:
                     next_input = next_input.div_(raw_normalizer)
 
             if not first:
@@ -92,6 +76,13 @@ def fast_collate(memory_format, batch):
     return tensor, targets
 
 
+def fast_collate_tensors(memory_format, batch):
+    imgs = [img[0] for img in batch]
+    targets = torch.tensor([target[1] for target in batch], dtype=torch.int64)
+    tensor = torch.stack(imgs, dim=0)
+    return tensor, targets
+
+
 def get_dataloader(dataset, batch_size, num_examples, workers=None, _worker_init_fn=None, world_size=1, gpu_dl=False):
     assert num_examples <= len(dataset)
 
@@ -107,6 +98,7 @@ def get_dataloader(dataset, batch_size, num_examples, workers=None, _worker_init
         logging_utils.log_debug("Using distributed sampler for external dataset!")
         dist_sampler = torch.utils.data.distributed.DistributedSampler(dataset_small)
 
+    collate_fn = partial(fast_collate_tensors if synthetic_dataset else fast_collate, torch.contiguous_format)
     loader = DataLoader(
         dataset_small,
         batch_size=batch_size,
@@ -115,12 +107,13 @@ def get_dataloader(dataset, batch_size, num_examples, workers=None, _worker_init
         shuffle=False,
         pin_memory=True if gpu_dl else False,
         sampler=dist_sampler,
-        collate_fn=partial(fast_collate, torch.contiguous_format),
+        collate_fn=collate_fn,
     )
 
     if gpu_dl:
         assert "ToTensor" not in str(dataset.transform), dataset.transform
+        normalization = not synthetic_dataset or dataset.dtype == "uint8"
         logging_utils.log_debug("Using GPU-based dataloader!")
-        return PrefetchedWrapper(loader)
+        return PrefetchedWrapper(loader, normalization)
 
     return loader

@@ -35,6 +35,7 @@ class TensorDataset(Dataset):
         self.inputs = inputs
         self.targets = targets
         self.transform = transform
+        self.dtype = inputs.dtype
 
     def __getitem__(self, index):
         input, target = self.inputs[index], self.targets[index]
