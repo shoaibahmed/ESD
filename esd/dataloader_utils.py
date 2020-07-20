@@ -57,6 +57,7 @@ class PrefetchedWrapper(object):
     def __init__(self, dataloader, normalization=False):
         self.dataloader = dataloader
         self.epoch = 0
+        self.batch_size = dataloader.batch_size
         self.normalization = normalization
 
     def __iter__(self):

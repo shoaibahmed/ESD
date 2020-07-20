@@ -11,8 +11,9 @@ from . import dataloader_utils
 
 
 class EmpiricalShatteringDimension:
-    def __init__(self, model, data_shape, num_classes, dataset=None, optimizer=None, training_params=None, seed=None,
-                 synthetic_dtype="uint8", max_examples=10000, example_increment=100, workers=8, gpu_dl=False, verbose=False):
+    def __init__(self, model, data_shape, num_classes, dataset=None, optimizer=None, lr_scheduler=False,
+                 training_params=None, seed=None, synthetic_dtype="uint8", max_examples=10000, 
+                 example_increment=100, workers=8, gpu_dl=False,  verbose=False):
         assert synthetic_dtype in ["uint8", "float"]
 
         self.distributed, self.world_size, self.num_gpus, self.rank = False, 1, 1, 0
@@ -62,8 +63,9 @@ class EmpiricalShatteringDimension:
             dataset_utils.replace_dataset_targets(self.dataset, num_classes)
 
         # Define the optimizer
-        if training_params is None:
-            training_params = dict(optimizer="adam", lr=1e-3, train_epochs=50, wd=0.0)  # Use standard params
+        if training_params is None:  # Use standard params
+            train_epochs = 50
+            training_params = dict(optimizer="adam", lr=1e-3, train_epochs=train_epochs, wd=0.0, lr_scheduler="cosine")
         else:
             self.training_params = training_params
         self.train_epochs = training_params["train_epochs"]
@@ -78,9 +80,12 @@ class EmpiricalShatteringDimension:
         assert optimizer is not None
         self.model.optimizer = optimizer
         self.model.criterion = torch.nn.CrossEntropyLoss()
+        self.lr_scheduler = lr_scheduler
 
     def evaluate(self, acc_thresh=0.8, termination_thresh=0.1):
         shattering_dims = {}
+        lr_scheduler = self.training_params["lr_scheduler"]
+
         for num_examples in range(self.ex_inc, self.max_examples + self.ex_inc, self.ex_inc):
             logging_utils.log_info(f"Training model using {num_examples} examples...")
 
@@ -88,12 +93,23 @@ class EmpiricalShatteringDimension:
             self.model.load_state_dict(self.initial_model_state)
             dataloader = dataloader_utils.get_dataloader(self.dataset, self.training_params["bs"], num_examples, workers=self.workers,
                                                          _worker_init_fn=self._worker_init_fn, world_size=self.world_size, gpu_dl=self.gpu_dl)
+            
+            if self.lr_scheduler is None:
+                lr_scheduler = training_utils.get_lr_policy(self.model.optimizer, self.training_params["lr_scheduler"], self.training_params)
+                logging_utils.log_info(f"LR scheduler: {lr_scheduler.__class__.__name__}")
+                last_lr = lr_scheduler.get_last_lr()[0]
+            else:
+                lr_scheduler = self.lr_scheduler
+                last_lr = self.training_params["lr"]
 
             for epoch in range(self.train_epochs):
                 start = time.time()
-                logging_utils.log_debug(f"Starting training for epoch # {epoch + 1}...")
+                logging_utils.log_debug(f"Starting training for epoch # {epoch + 1} with an LR of {last_lr}!")
                 training_utils.train(self.model, dataloader, device=self.device, logging=self.verbose)
-                logging_utils.log_debug(f"Training for {epoch + 1} finished. Time elapsed: {(time.time()-start)/60.} mins.")
+                if lr_scheduler is not None:
+                    lr_scheduler.step()
+                    last_lr = lr_scheduler.get_last_lr()[0]
+                logging_utils.log_debug(f"Training for {epoch + 1} finished. Time elapsed: {(time.time()-start)/60.:.4f} mins.")
             acc, log_dict = training_utils.evaluate(self.model, dataloader, device=self.device, logging=self.verbose)
             assert log_dict['total'] == num_examples, f"{log_dict['total']} != {num_examples}"
             shattering_dims[num_examples] = acc

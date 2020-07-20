@@ -5,6 +5,28 @@ from . import dist_utils
 from . import logging_utils
 
 
+def get_lr_policy(optimizer, lr_scheduler, param_dict):
+    # if lr_scheduler is None:
+    #     return None
+    
+    if lr_scheduler == "step_lr":
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=param_dict["step_size"], 
+                                                    gamma=param_dict["gamma"])
+    elif lr_scheduler == "multistep_lr":
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=param_dict["milestones"], 
+                                                         gamma=param_dict["gamma"])
+    elif lr_scheduler == "exponential_lr":
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=param_dict["gamma"])
+    elif lr_scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=param_dict["train_epochs"])
+    else:
+        assert lr_scheduler == "reduce_lr_on_plateau", lr_scheduler
+        raise RuntimeError("LR on Plateau is not supported since that requires the final loss.")
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, mode='min', factor=param_dict["gamma"], 
+                                                               patience=param_dict["patience"])
+    return scheduler
+
+
 def train(model, dataloader, device=None, logging=False):
     optimizer = model.optimizer
     criterion = model.criterion

@@ -28,6 +28,10 @@ parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--wd', type=float, default=0.0, help='weight decay')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum (only required for SGD)')
 
+parser.add_argument('--lr_scheduler', choices=["none", "step", "cosine"], default="cosine", help='LR scheduler to be used')
+parser.add_argument('--lr_steps', type=str, default=None, help='LR steps (only required for step LR scheduler)')
+parser.add_argument('--gamma', type=float, default=0.1, help='gamma')
+
 parser.add_argument('--plots_dir', type=str, default="Plots/", help='directory to store the complete output plots')
 parser.add_argument('--debug', action='store_true', help='enable debug logging')
 
@@ -43,7 +47,7 @@ args = parser.parse_args()
 assert args.synthetic_data or args.data_path is not None
 
 # Setup logging
-logger = logging.getLogger(__name__)  # Create a logger object
+logger = logging.getLogger('ESD')  # Create a logger object
 coloredlogs.install(level='DEBUG' if args.debug else 'INFO')
 warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
 
@@ -90,14 +94,17 @@ if not args.synthetic_data:
     )
 
 # Optional to specify the training params and optimizer
-training_params = {"optimizer": args.optimizer, "lr": args.lr, "wd": args.wd, "bs": args.batch_size, "train_epochs": args.train_epochs}
+training_params = {"optimizer": args.optimizer, "lr": args.lr, "momentum": args.momentum, "wd": args.wd, "bs": args.batch_size, \
+    "train_epochs": args.train_epochs, "lr_scheduler": args.lr_scheduler, "lr_steps": args.lr_steps, "gamma": args.gamma, "step_size": 10}
 optimizer = None
+lr_scheduler = None
 
 esd = EmpiricalShatteringDimension(model=model,
                                    dataset=dataset,
                                    data_shape=data_shape,
                                    num_classes=args.num_classes,
                                    optimizer=optimizer,
+                                   lr_scheduler=lr_scheduler,
                                    training_params=training_params,
                                    synthetic_dtype="uint8",
                                    max_examples=1000000,

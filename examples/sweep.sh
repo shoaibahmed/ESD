@@ -13,8 +13,9 @@ cd /netscratch/siddiqui/Repositories/ESD/examples/
 rm "results_dist_"$num_procs".log"
 touch "results_dist_"$num_procs".log"
 
-optim_bs=256
+optim_bs=1024
 bs=$(($optim_bs/$num_procs))
+lr=$(python -c "print($optim_bs/1000)")
 
 # for mname in resnet18 resnet34 resnet50 resnet101 resnet152 vgg11 vgg11_bn vgg13 vgg13_bn vgg16 vgg16_bn vgg19 vgg19_bn; do
 for mname in resnet18 resnet34 resnet50; do
@@ -23,10 +24,10 @@ for mname in resnet18 resnet34 resnet50; do
     if [[ $synthetic_data == 1 ]]; then
       extra_args="--synthetic_data"
     fi
-    echo "Evaluating $mname model!"
+    echo "Evaluating $mname model using batch size of $bs (optimizer batch-size: $optim_bs) and LR of $lr!"
     python multiproc.py --nproc_per_node $num_procs example_imagenet.py --model_name $mname --sync_bn \
-           --data_path /ds/images/imagenet/ --batch_size $bs --optimizer adam --lr 1e-3 --num_workers 5 \
-           --use_gpu_dl --debug $extra_args | tee -a "results_dist_"$num_procs".log"
+           --data_path /ds/images/imagenet/ --batch_size $bs --train_epochs 100 --optimizer sgd --lr $lr \
+           --momentum 0.9 --num_workers 8 --use_gpu_dl --debug $extra_args | tee -a "results_dist_"$num_procs".log"
     sleep 5  # To ensure that the port has bas been released for the subsequent process
   done
 done
