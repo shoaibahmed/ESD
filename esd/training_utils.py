@@ -27,12 +27,12 @@ def get_lr_policy(optimizer, lr_scheduler, param_dict):
     return scheduler
 
 
-def train(model, dataloader, device=None, logging=False):
+def train(model, dataloader, device=None, progress_bar=False):
     optimizer = model.optimizer
     criterion = model.criterion
 
     model.train()
-    pbar = tqdm(total=len(dataloader)) if logging else None
+    pbar = tqdm(total=len(dataloader)) if progress_bar else None
     for input, target in dataloader:
         if device is not None:
             input, target = input.to(device), target.to(device)
@@ -45,7 +45,7 @@ def train(model, dataloader, device=None, logging=False):
     if pbar is not None: pbar.close
 
 
-def evaluate(model, dataloader, device=None, logging=False):
+def evaluate(model, dataloader, device=None, progress_bar=False):
     criterion = model.criterion
 
     model.eval()
@@ -53,7 +53,7 @@ def evaluate(model, dataloader, device=None, logging=False):
     correct = 0
     total = 0
     with torch.no_grad():
-        pbar = tqdm(total=len(dataloader)) if logging else None
+        pbar = tqdm(total=len(dataloader)) if progress_bar else None
         for input, target in dataloader:
             if device is not None:
                 input, target = input.to(device), target.to(device)

@@ -11,9 +11,47 @@ from . import dataloader_utils
 
 
 class EmpiricalShatteringDimension:
-    def __init__(self, model, data_shape, num_classes, dataset=None, optimizer=None, lr_scheduler=False,
-                 training_params=None, seed=None, synthetic_dtype="uint8", max_examples=10000, 
-                 example_increment=100, workers=8, gpu_dl=False,  verbose=False):
+    def __init__(self, model, data_shape, num_classes, min_examples, max_examples, example_increment,
+                 num_permutations=1, dataset=None, optimizer=None, lr_scheduler=False, training_params=None,
+                 seed=None, synthetic_dtype="uint8", workers=8, gpu_dl=False, progress_bar=False):
+        """
+        Main class that is used for computing the empirical shattering dimensions of the network.
+        Although the shattering dimension is defined only for binary class of functions, we treat the
+        empirical shattering dimension as a dataset specific measure, taking both the number of
+        classes as well as the size of the dataset into account.
+        :param model: a callable that takes an input tensor and returns the model logits.
+        :param data_shape: shape of the data -- this is specifically required when using synthetic data.
+        :param num_classes: number of classes considered in the dataset.
+        :param min_examples: minimum number of examples to be used for training the model. The model starts training
+                                from example_increment to max_examples with increments of example_increment.
+        :param max_examples: maximum number of examples to be used for training the model. The model starts training
+                                from example_increment to max_examples with increments of example_increment.
+        :param example_increment: number of examples to increment after each of training the model. The model starts
+                                training from example_increment to max_examples with increments of example_increment.
+        :param num_permutations (optional): number of permutations of the labels to be used for training the model for
+                                a particular number of examples. This is a poor proxy in place of considering all
+                                possible label permutations for which the actual shattering dimension is defined.
+                                Should be kept as high as possible based on the availability of computational resources.
+                                There is usually a high variance on the results based on the label permutations.
+                                Picks the lowest accuracy among all the permutations to identify the final accuracy.
+                                If not defined, defaults to 1.
+        :param dataset: (optional) dataset object to be used for training the model (not required for synthetic datasets).
+        :param optimizer: (optional) optimizer to be used. If not defined, defaults to adam with an LR of 1e-3.
+        :param lr_scheduler: (optional) LR scheduler to be used. If not defined, defaults to a cosine LR schedule.
+        :param training_params: (optional) provides params to the trainer which includes LR, train_epochs, momentum,
+                                and weight decay.
+        :param seed: (optional) seed value to be used for seeding the library.
+        :param synthetic_dtype: (optional) Specifies the type of data to be used for training the model -- required
+                                synthetic data pipeline. Uint8 is a reasonable option only for image dataset where
+                                each pixel takes on the distinct value from 0-255. This significantly reduces the
+                                amount of memory required to store the dataset. For using the library for non-image
+                                data, it's recommended to use float as the datatype. If not defined, defaults to uint8.
+        :param workers: (optional) number of workers to be used for training the model. If not defined, defaults to 8.
+        :param gpu_dl: (optional) use GPU dataloader which internally uses prefetching to speed up the training. If
+                                not defined, defaults to false.
+        :param progress_bar: (optional) use progress bar to indicate training progress. If not defined, defaults to false.
+        :return: object of the class
+        """
         assert synthetic_dtype in ["uint8", "float"]
 
         self.distributed, self.world_size, self.num_gpus, self.rank = False, 1, 1, 0
@@ -42,15 +80,22 @@ class EmpiricalShatteringDimension:
         self.initial_model_state = copy.deepcopy(model.state_dict())
         # dist_utils.broadcast_from_main(self.initial_model_state, is_tensor=False)  # DDP will take care of this
 
+        self.min_examples = min_examples
+        self.max_examples = max_examples
+        self.example_increment = example_increment
+
         self.seed = seed
         self.workers = workers
         self.gpu_dl = gpu_dl
-        self.verbose = verbose
+        self.progress_bar = progress_bar
         self.data_shape = data_shape
         self.num_classes = num_classes
-        self.max_examples = max_examples
-        self.ex_inc = example_increment
         self.dataset = dataset
+        self.num_permutations = num_permutations
+
+        # TODO: Add implementation for number of permutations, picking the minimum final accuracy
+        if self.num_permutations > 0:
+            raise NotImplementedError
 
         if self.dataset is None:
             logging_utils.log_info(f"Initializing synthetic dataset with {self.max_examples} {synthetic_dtype} examples and {self.num_classes} number of classes!")
@@ -83,10 +128,18 @@ class EmpiricalShatteringDimension:
         self.lr_scheduler = lr_scheduler
 
     def evaluate(self, acc_thresh=0.8, termination_thresh=0.1):
+        """
+        Evaluation method which computes the empirical shattering dimensions of the network.
+        :param acc_thresh: (optional) defines the accuracy to be used as the cutoff point to identify the shattering
+                            dimensions of the network. As the training process is noisy, this should be slightly
+                            lower than perfect. If not defined, defaults to 0.8.
+        :param termination_thresh: (optional) defines the accuracy at which to terminate the search. This is usually
+                            kept to be very low. This should be a point where we are sure that we have already passed
+                            the shattering dimensions of the network. If not defined, defaults to 0.1.
+        :return: a tuple of the computed shattering dimension as well as a dictionary containing detailed logs.
+        """
         shattering_dims = {}
-        lr_scheduler = self.training_params["lr_scheduler"]
-
-        for num_examples in range(self.ex_inc, self.max_examples + self.ex_inc, self.ex_inc):
+        for num_examples in range(self.min_examples, self.max_examples + self.example_increment, self.example_increment):
             logging_utils.log_info(f"Training model using {num_examples} examples...")
 
             # Reload model state and use random sampler to fix the number of examples in the dataset
@@ -105,12 +158,12 @@ class EmpiricalShatteringDimension:
             for epoch in range(self.train_epochs):
                 start = time.time()
                 logging_utils.log_debug(f"Starting training for epoch # {epoch + 1} with an LR of {last_lr:.6f}!")
-                training_utils.train(self.model, dataloader, device=self.device, logging=self.verbose)
+                training_utils.train(self.model, dataloader, device=self.device, progress_bar=self.progress_bar)
                 if lr_scheduler is not None:
                     lr_scheduler.step()
                     last_lr = lr_scheduler.get_last_lr()[0]
                 logging_utils.log_debug(f"Training for {epoch + 1} finished. Time elapsed: {(time.time()-start)/60.:.4f} mins.")
-            acc, log_dict = training_utils.evaluate(self.model, dataloader, device=self.device, logging=self.verbose)
+            acc, log_dict = training_utils.evaluate(self.model, dataloader, device=self.device, progress_bar=self.progress_bar)
             assert log_dict['total'] == num_examples, f"{log_dict['total']} != {num_examples}"
             shattering_dims[num_examples] = acc
             if acc < termination_thresh:
