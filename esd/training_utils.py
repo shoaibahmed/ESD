@@ -6,9 +6,14 @@ from . import logging_utils
 
 
 def get_lr_policy(optimizer, lr_scheduler, param_dict):
-    # if lr_scheduler is None:
-    #     return None
-    
+    """
+    Returns the learning rate policy to be used for training the model
+    :param optimizer: tensor to be broadcasted.
+    :param lr_scheduler: name of the learning rate scheduler to be used for training.
+    :param param_dict: Parameter dictionary specifying the specifies values for the policy to be used which includes
+                        step size, gamma, patience etc.
+    :return Returns the learning rate policy
+    """
     if lr_scheduler == "step_lr":
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=param_dict["step_size"], 
                                                     gamma=param_dict["gamma"])
@@ -28,6 +33,14 @@ def get_lr_policy(optimizer, lr_scheduler, param_dict):
 
 
 def train(model, dataloader, device=None, progress_bar=False):
+    """
+    Train the provided model for a single epoch using the specified dataloader.
+    :param model: model to be trained.
+    :param dataloader: dataloader providing the data to train the model.
+    :param device: (optional) device to be used for training the model.
+    :param progress_bar: (optional) if true, uses progress bar to display training progress. If not defined,
+                    defaults to false.
+    """
     optimizer = model.optimizer
     criterion = model.criterion
 
@@ -46,6 +59,15 @@ def train(model, dataloader, device=None, progress_bar=False):
 
 
 def evaluate(model, dataloader, device=None, progress_bar=False):
+    """
+    Evaluates the provided model using the specified dataloader.
+    :param model: model to be trained.
+    :param dataloader: dataloader providing the data to train the model.
+    :param device: (optional) device to be used for training the model.
+    :param progress_bar: (optional) if true, uses progress bar to display training progress. If not defined,
+                    defaults to false.
+    :return a tuple containing the accuracy of the model, as well as a dictionary containing detailed per step logs.
+    """
     criterion = model.criterion
 
     model.eval()

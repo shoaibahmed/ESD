@@ -42,15 +42,16 @@ class EmpiricalShatteringDimension:
                                 and weight decay.
         :param seed: (optional) seed value to be used for seeding the library.
         :param synthetic_dtype: (optional) Specifies the type of data to be used for training the model -- required
-                                synthetic data pipeline. Uint8 is a reasonable option only for image dataset where
-                                each pixel takes on the distinct value from 0-255. This significantly reduces the
-                                amount of memory required to store the dataset. For using the library for non-image
-                                data, it's recommended to use float as the datatype. If not defined, defaults to uint8.
+                                for synthetic data pipeline. Possible options are ["uint8", "float"]. Uint8 is a
+                                reasonable option only for image dataset where each pixel takes on the distinct value
+                                from 0-255. This significantly reduces the amount of memory required to store the
+                                dataset. For using the library with non-image data, it's recommended to use float
+                                as the datatype. If not defined, defaults to uint8.
         :param workers: (optional) number of workers to be used for training the model. If not defined, defaults to 8.
         :param gpu_dl: (optional) use GPU dataloader which internally uses prefetching to speed up the training. If
                                 not defined, defaults to false.
         :param progress_bar: (optional) use progress bar to indicate training progress. If not defined, defaults to false.
-        :return: object of the class
+        :return object of the class
         """
         assert synthetic_dtype in ["uint8", "float"]
 
@@ -136,7 +137,7 @@ class EmpiricalShatteringDimension:
         :param termination_thresh: (optional) defines the accuracy at which to terminate the search. This is usually
                             kept to be very low. This should be a point where we are sure that we have already passed
                             the shattering dimensions of the network. If not defined, defaults to 0.1.
-        :return: a tuple of the computed shattering dimension as well as a dictionary containing detailed logs.
+        :return a tuple of the computed shattering dimension as well as a dictionary containing detailed logs.
         """
         shattering_dims = {}
         for num_examples in range(self.min_examples, self.max_examples + self.example_increment, self.example_increment):

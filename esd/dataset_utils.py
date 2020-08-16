@@ -48,6 +48,14 @@ class TensorDataset(Dataset):
 
 
 class SubsetDataset(Dataset):
+    r"""Dataset useful for taking out subsets of the dataset.
+    This is an updated version of the torch.utils.data.SubsetDataset as it assigns a random permutation of the labels
+    and distributes it among the different processes in a distributed setting.
+    Arguments:
+        dataset: Dataset to select the subset from.
+        num_examples (int): number of examples to be selected from the dataset.
+    """
+
     def __init__(self, dataset, num_examples):
         assert len(dataset) >= num_examples
         self.dataset = dataset
@@ -67,8 +75,26 @@ class SubsetDataset(Dataset):
 
 
 def get_syntetic_dataset(num_examples, data_shape, num_classes, dtype="float", world_size=1, gpu_dl=False):
+    """
+    Returns a synthetic dataset which can be used to train the model.
+    :param num_examples: maximum number of examples in the dataset.
+    :param data_shape: shape of every example to be returned. Requires a list of either 3 elements [C, H, W] or
+                        a list of two elements for sequential dataset [C, L].
+    :param num_classes: number of classes in the dataset.
+    :param dtype: (optional) Specifies the type of data to be used for training the model. Possible options are
+                        ["uint8", "float"]. Uint8 is a reasonable option only for image dataset where each pixel
+                        takes on the distinct value from 0-255. This significantly reduces the amount of memory
+                        required to store the dataset. For using the library with non-image data, it's recommended
+                        to use float as the datatype. If not defined, defaults to uint8.
+    :param world_size: (optional) specifies the number of processes launched. Useful for distributed training. If
+                    not specified, defaults to 1.
+    :param gpu_dl: (optional) use GPU dataloader which internally uses prefetching to speed up the training. If
+                    not defined, defaults to false. This is required here since the dataset will not normalize
+                    data in this case.
+    :return dataset object
+    """
     assert isinstance(data_shape, list) or isinstance(data_shape, tuple)
-    assert len(data_shape) == 3 and data_shape[0] in [1, 3]
+    assert (len(data_shape) == 3 and data_shape[0] in [1, 3]) or len(data_shape) == 2
     assert dtype in ["uint8", "float"]
     assert world_size >= 1
     assert world_size == 1 or torch.distributed.is_initialized()
@@ -88,6 +114,13 @@ def get_syntetic_dataset(num_examples, data_shape, num_classes, dtype="float", w
 
 
 def replace_dataset_targets(dataset, num_classes):
+    """
+    Replaces dataset targets with random targets. These random targets are also broadcasted to other processes from
+    the main process when using distributed training.
+    :param dataset: dataset whose targets are to be replaced.
+    :param num_classes: number of classes in the dataset.
+    :return dataset object with the new random targets
+    """
     targets = torch.randint(0, num_classes, (len(dataset.targets),))
     dist_utils.broadcast_from_main(targets)
     dataset.targets = targets.numpy().tolist()

@@ -4,6 +4,13 @@ sns.set()
 
 
 def plot_log(stats_dict, output_file=None, title=None):
+    """
+    Plots the detailed logs returned from the ESD library.
+    :param stats_dict: dictionary containing the detailed stats returned by the library.
+    :param output_file: (optional) string specifiying the output file to be used for writing the figure. If not
+                        defined, displays the figure on the screen.
+    :param title: (optional) title to be used for the plot.
+    """
     assert stats_dict is not None
     fig, ax = plt.subplots()
     fig.set_size_inches(8, 5)
