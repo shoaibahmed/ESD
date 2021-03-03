@@ -15,7 +15,7 @@ from esd.utils import plot_log
 
 # Init parser
 parser = argparse.ArgumentParser(description='Empirical Shattering Dimension')
-parser.add_argument('--model_name', type=str, default="resnet50", help='model name')
+parser.add_argument('--model_name', type=str, default="resnet18", help='model name')
 parser.add_argument('--data_path', type=str, default=None, help='path to the train dataset')
 parser.add_argument('--synthetic_data', action='store_true', help='use synthetic data')
 parser.add_argument('--num_classes', type=int, default=1000, help='number of classes to evaluate')
@@ -35,6 +35,7 @@ parser.add_argument('--gamma', type=float, default=0.1, help='gamma')
 parser.add_argument('--plots_dir', type=str, default="Plots/", help='directory to store the complete output plots')
 parser.add_argument('--debug', action='store_true', help='enable debug logging')
 
+parser.add_argument("--image_size", type=int, default=224)
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--num_gpus", type=int, default=1)
 parser.add_argument("--num_workers", type=int, default=8)
@@ -81,7 +82,8 @@ if args.distributed:
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank],
                                                       output_device=args.local_rank, find_unused_parameters=True)
 
-data_shape = (3, 224, 224)
+data_shape = (3, args.image_size, args.image_size)
+print("Data shape:", data_shape)
 dataset = None
 if not args.synthetic_data:
     print("Loading dataset...")
@@ -92,6 +94,7 @@ if not args.synthetic_data:
             [transforms.Resize((224, 224))] + ([] if args.use_gpu_dl else [transforms.ToTensor()])
         ),
     )
+    print("Number of examples in the dataset:", len(dataset))
 
 # Optional to specify the training params and optimizer
 training_params = {"optimizer": args.optimizer, "lr": args.lr, "momentum": args.momentum, "wd": args.wd, "bs": args.batch_size, \

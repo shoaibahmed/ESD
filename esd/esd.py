@@ -107,6 +107,7 @@ class EmpiricalShatteringDimension:
             logging_utils.log_info("Replacing dataset targets with random targets!")
             assert isinstance(self.dataset.targets, list) or len(self.dataset.targets.shape) == 1
             dataset_utils.replace_dataset_targets(self.dataset, num_classes)
+        logging_utils.log_info(f"Total number of examples in the dataset: {len(self.dataset)}")
 
         # Define the optimizer
         if training_params is None:  # Use standard params
@@ -120,6 +121,7 @@ class EmpiricalShatteringDimension:
                 optimizer = torch.optim.Adam(self.model.parameters(), lr=training_params["lr"],
                                              weight_decay=training_params["wd"])
             else:
+                assert training_params["optimizer"] == "sgd"
                 optimizer = torch.optim.SGD(self.model.parameters(), lr=training_params["lr"],
                                             momentum=training_params["momentum"], weight_decay=training_params["wd"])
 

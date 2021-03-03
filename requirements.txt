@@ -2,6 +2,7 @@ tqdm
 matplotlib
 seaborn
 logging
+coloredlogs
 numpy>=1.18.1
 torch>=1.2.0
 torchvision>=0.5.0
